@@ -4,6 +4,7 @@ var folderViewManager =
 	currentFolder: null,
 	currentView: null,
 	viewMenu: null,
+	preferences: null,
 	
 	rdfservice: Components.classes["@mozilla.org/rdf/rdf-service;1"].getService(Components.interfaces.nsIRDFService),
 	dataSource: null,
@@ -14,6 +15,7 @@ var folderViewManager =
 	nameArc: null,
 	customArc: null,
 	previewArc: null,
+	layoutArc: null,
 	
 	trueLiteral: null,
 	falseLiteral: null,
@@ -21,10 +23,13 @@ var folderViewManager =
 	// Initialises the objects. Called onload of the document.
 	init: function()
 	{
+		this.preferences = Components.classes["@mozilla.org/preferences-service;1"].getService(Components.interfaces.nsIPrefService).getBranch(null);
+
 		this.viewArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#view");
 		this.nameArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#name");
 		this.customArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#custom");
 		this.previewArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#preview");
+		this.layoutArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#layout");
 
 		this.trueLiteral=this.rdfservice.GetLiteral("true");
 		this.falseLiteral=this.rdfservice.GetLiteral("false");
@@ -66,6 +71,7 @@ var folderViewManager =
 		paneToggleKey.addEventListener("command",this.previewPaneToggledListener,false);
 		var paneToggleMenu = document.getElementById("menu_showMessage");
 		paneToggleMenu.addEventListener("command",this.previewPaneToggledListener,false);
+		this.preferences.QueryInterface(Components.interfaces.nsIPrefBranchInternal).addObserver("mail.pane_config.dynamic",this.layoutChangeObserver,false);
 	},
 	
 	// Stores the current vuew as a new view in the statefile.
@@ -106,29 +112,6 @@ var folderViewManager =
 		return (result==this.trueLiteral);
 	},
 	
-	// Loads the given view from the state file.
-	loadView: function(view)
-	{
-		// Load the preview pane state
-		var previewstate = this.dataSource.GetTarget(view,this.previewArc,true);
-		if (previewstate==null)
-			previewstate=this.trueLiteral;
-		if ((previewstate==null)||(previewstate==this.trueLiteral))
-		{
-			if (IsMessagePaneCollapsed())
-			{
-				MsgToggleMessagePane();
-			}
-		}
-		else
-		{
-			if (!IsMessagePaneCollapsed())
-			{
-				MsgToggleMessagePane();
-			}
-		}
-	},
-	
 	// Deletes the current view from the state file.
 	deleteView: function(view)
 	{
@@ -161,6 +144,17 @@ var folderViewManager =
 		this.flushData();
 	},
 	
+	saveLayoutState: function(view)
+	{
+		var target = this.dataSource.GetTarget(view,this.layoutArc,true);
+		if (target!=null)
+		{
+			this.dataSource.Unassert(view,this.layoutArc,target);
+		}
+		var value = this.rdfservice.GetIntLiteral(this.preferences.getIntPref("mail.pane_config.dynamic"));
+		this.dataSource.Assert(view,this.layoutArc,value,true);
+	},
+	
 	savePreviewPaneState: function(view)
 	{
 		// Save preview pane state
@@ -180,7 +174,40 @@ var folderViewManager =
 	saveCurrentView: function(view)
 	{
 		this.savePreviewPaneState(view);
+		this.saveLayoutState(view);
 		this.flushData();
+	},
+	
+	// Loads the given view from the state file.
+	loadView: function(view)
+	{
+		// Load the preview pane state
+		var previewstate = this.dataSource.GetTarget(view,this.previewArc,true);
+		if ((previewstate==null)||(previewstate==this.trueLiteral))
+		{
+			if (IsMessagePaneCollapsed())
+			{
+				MsgToggleMessagePane();
+			}
+		}
+		else
+		{
+			if (!IsMessagePaneCollapsed())
+			{
+				MsgToggleMessagePane();
+			}
+		}
+		
+		// Load the layout state
+		var value = this.dataSource.GetTarget(view,this.layoutArc,true);
+		if (value==null)
+		{
+			this.preferences.setIntPref("mail.pane_config.dynamic",0);
+		}
+		else
+		{
+			this.preferences.setIntPref("mail.pane_config.dynamic",value.QueryInterface(Components.interfaces.nsIRDFInt).Value);
+		}
 	},
 	
 	// Flushes any state data to disk
@@ -315,6 +342,15 @@ var folderViewManager =
 		handleEvent: function(event)
 		{
 			folderViewManager.init();
+		}
+	},
+	
+	layoutChangeObserver:
+	{
+		observe: function(subject, topic, data)
+		{
+			folderViewManager.saveLayoutState(folderViewManager.currentView);
+			folderViewManager.flushData();
 		}
 	},
 	

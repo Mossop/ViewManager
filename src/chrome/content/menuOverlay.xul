@@ -15,8 +15,8 @@
 		</menupopup>
 		<template>
 			<menupopup>
-				<menuitem name="viewselection" type="radio"
-					oncommand="folderViewManager.changeView(this);" label="rdf:http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#name" uri="rdf:*"/>
+				<menuitem name="viewselection" type="radio" oncommand="folderViewManager.changeView(this);" 
+					label="rdf:http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#name" uri="rdf:*"/>
 			</menupopup>
 		</template>
 	</menu>

@@ -8,6 +8,7 @@ var folderViewManager =
 	rdfservice: Components.classes["@mozilla.org/rdf/rdf-service;1"].getService(Components.interfaces.nsIRDFService),
 	dataSource: null,
 	stateFile: null,
+	viewContainer: null,
 	
 	viewArc: null,
 	nameArc: null,
@@ -40,14 +41,19 @@ var folderViewManager =
 		var ioService = Components.classes["@mozilla.org/network/io-service;1"].getService(Components.interfaces.nsIIOService);
 		this.stateFile = ioService.newFileURI(filename).asciiSpec;
 		//dump(stateFile);
-		this.dataSource = this.rdfservice.GetDataSource(this.stateFile);
+		this.dataSource = this.rdfservice.GetDataSourceBlocking(this.stateFile);
 
 		var viewroot = this.rdfservice.GetResource("views://");
 		var cutils = Components.classes["@mozilla.org/rdf/container-utils;1"].getService(Components.interfaces.nsIRDFContainerUtils);
 		if (!cutils.IsSeq(this.dataSource,viewroot))
 		{
-			cutils.MakeSeq(this.dataSource,viewroot);
+			this.viewContainer=cutils.MakeSeq(this.dataSource,viewroot);
 			this.flushData();
+		}
+		else
+		{
+			this.viewContainer = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
+			this.viewContainer.Init(this.dataSource,viewroot);
 		}
 		
 		this.viewMenu = document.getElementById("viewmanager_Views");
@@ -80,9 +86,7 @@ var folderViewManager =
 		if (!custom)
 		{
 			this.dataSource.Assert(newres,this.customArc,this.falseLiteral,true);
-			var container = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
-			container.Init(this.dataSource,this.rdfResource.GetResource("views://"));
-			container.AppendElement(newres);
+			this.viewContainer.AppendElement(newres);
 		}
 		else
 		{
@@ -130,9 +134,7 @@ var folderViewManager =
 	{
 		if (!this.isCustomView(view))
 		{
-			var container = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
-			container.Init(this.dataSource,this.rdfResource.GetResource("views://"));
-			container.RemoveElement(view,false);
+			this.viewContainer.RemoveElement(view,false);
 		}
 		
 		// Simple and thorough, wipe out all assertions about this view.
@@ -148,6 +150,14 @@ var folderViewManager =
 				this.dataSource.Unassert(view,arc,target);
 			}
 		}
+		
+		var sources = this.dataSource.GetSources(this.viewArc,view,true);
+		while (sources.hasMoreElements())
+		{
+			var source = sources.getNext().QueryInterface(Components.interfaces.nsIRDFResource);
+			this.dataSource.Unassert(source,this.viewArc,view);
+		}
+		
 		this.flushData();
 	},
 	
@@ -180,36 +190,83 @@ var folderViewManager =
 		rds.Flush();
 	},
 	
-	// Occurs when someone selects a preset view from the menu
-	changeView: function(view)
+	// Finds and checks the appropriate menu item
+	checkMenu: function(view)
 	{
-		if (view.getAttribute("checked")!="true")
+		if (this.isCustomView(view))
+		{
+			var menu = document.getElementById("viewmanager_Views_Custom");
+			menu.setAttribute("checked","true");
+		}
+		else
+		{
+			var menu = document.getElementById("viewmanager_Views_Popup");
+			var child = menu.firstChild;
+			while (child!=null)
+			{
+				if (child.resource==view)
+				{
+					child.setAttribute("checked","true");
+					return;
+				}
+				child=child.nextSibling;
+			}
+		}
+	},
+	
+	// Occurs when someone selects the copy menu
+	copyView: function(menu)
+	{
+		var newname = prompt("Enter a name for the new view:","");
+		if (newname!=null)
+		{
+			if (newname.length==0)
+			{
+				alert("You must enter a name for the view.");
+			}
+			else
+			{
+				this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView);
+				var newview = this.copyCurrentView(newname,false);
+				if (this.isCustomView(this.currentView))
+				{
+					this.deleteView(this.currentView);
+				}
+				this.currentView=newview;
+				this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
+				this.flushData();
+				this.checkMenu(this.currentView);
+			}
+		}
+	},
+	
+	// Occurs when someone selects a preset view from the menu
+	changeView: function(menu)
+	{
+		if (menu.resource!=this.currentView)
 		{
 			this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView,true);
-			if (isCustomView(this.currentView))
+			if (this.isCustomView(this.currentView))
 			{
-				deleteView(this.currentView);
+				this.deleteView(this.currentView);
 			}
-			this.currentView=view.resource;
+			this.currentView=menu.resource;
 			this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
 			this.flushData();
 			
 			this.loadView(this.currentView);
-
-			view.setAttribute("checked","true");
 		}
 	},
 	
 	// Occurs when someone selects the custom view from the menu.
-	changeViewCustom: function(view)
+	changeViewCustom: function(menu)
 	{
-		if (view.getAttribute("checked")!="true")
+		if (!this.isCustomView(this.currentView))
 		{
 			this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView);
 			this.currentView=this.copyCurrentView("custom",true);
 			this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
 			this.flushData();
-			view.setAttribute("checked","true");
 		}
 	},
 	
@@ -241,13 +298,14 @@ var folderViewManager =
 				this.currentView=this.copyCurrentView("custom",true);
 				this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
 				this.flushData();
-				document.getElementById("viewmanager_Views_Custom").setAttribute("checked","true");
+				this.checkMenu(this.currentView);
 			}
 			else if (newview!=this.currentView)
 			{
 				// change view
 				this.currentView=newview;
 				this.loadView(this.currentView);
+				this.checkMenu(newview);
 			}
 		}
 	},

@@ -6,11 +6,11 @@
 
 <menupopup id="menu_View_Popup">
 	<menu label="View Manager" id="viewmanager_Views" datasources="rdf:null" ref="views://">
-		<menupopup>
+		<menupopup id="viewmanager_Views_Popup">
 			<menuitem name="viewselection" type="radio"
 				id="viewmanager_Views_Custom" label="Custom" oncommand="folderViewManager.changeViewCustom(this);"/>
 			<menuseparator/>
-			<menuitem label="Copy..."/>
+			<menuitem oncommand="folderViewManager.copyView(this);" label="Copy current view..."/>
 			<menuseparator/>
 		</menupopup>
 		<template>

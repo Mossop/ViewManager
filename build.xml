@@ -1,0 +1,168 @@
+<project name="TestExtension" default="package">
+	
+	<description>
+		A build file that should automate the packaging of mozilla based extensions.
+		
+		The source for everything is assumed to be in an src dir off the basedir.
+		The built files go into a bin dir and the xpi as well as a couple of other
+		files are stored in the basedir.
+	</description>
+	
+	<!-- Load properties specific to the user -->
+	<property prefix="localsetup" file="${user.home}/localsetup.properties"/>
+
+	<!-- These locate the user data directories for the mozilla applications -->
+	<property name="firefox.datadir" location="${user.home}/Application Data/Mozilla/Firefox"/>
+	<property name="thunderbird.datadir" location="${user.home}/Application Data/Thunderbird"/>
+	<property name="mozilla.datadir" location="${user.home}/Application Data/Mozilla"/>
+	
+	<!-- Sets up the location of the extension source and a place to compile everything to -->
+	<property name="srcdir" location="${basedir}/src"/>
+	<property name="bindir" location="${basedir}/bin"/>
+	
+	<target name="overwrite" depends="build,_overwrite_firefox,_overwrite_thunderbird,_overwrite_mozilla">
+		
+		<!-- Attempts to overwrite an installation of the extension in the firefox and thunderbird profile -->
+		
+	</target>
+	
+	<target name="package" depends="build">
+		
+		<!-- This target will package up the built extension as an xpi file in the projects basedir -->
+
+		<zip basedir="${bindir}" destfile="${basedir}/${ant.project.name}-${extension.version}.xpi"/>
+	</target>
+
+	<target name="build" depends="_setup,_buildcomponents,_buildchrome">
+		
+		<!-- Builds all the necessary files and copy install.rdf over-->
+			
+		<copy file="${srcdir}/install.rdf" todir="${bindir}"/>
+	</target>
+
+	<target name="clean">
+		
+		<!-- Deletes all intermediate files -->
+			
+		<delete dir="${bindir}"/>
+		<delete file="${basedir}/properties.xml"/>
+	</target>
+	
+	<target name="_setup" depends="_extract-props,_setup-firefox,_setup-thunderbird,_setup-mozilla">
+		
+		<!-- Sets things up and detects if there is a components directory -->
+		
+		<tstamp prefix="time"/>
+		<condition property="components-exists" value="true">
+			<available file="${srcdir}/components" type="dir"/>
+		</condition>
+		<mkdir dir="${bindir}"/>
+	</target>
+
+	<target name="_extract-props">
+		
+		<!-- Extract some properties from out of the install.rdf file -->
+		
+		<xslt style="${basedir}/extract.xsl" in="${srcdir}/install.rdf" out="${basedir}/properties.xml"/>
+		<xmlproperty file="${basedir}/properties.xml" keepRoot="false"/>
+	</target>
+	
+	<target name="_setup-thunderbird" if="extension.targets.thunderbird">
+		
+		<!-- Sets up some properties if thunderbird is one of the targets of the extension -->
+		
+		<echo>Thunderbird extension</echo>
+		<property prefix="thunderbird.profile" file="${thunderbird.datadir}/profiles.ini"/>
+		<property name="thunderbird.profiledir" location="${thunderbird.datadir}/${thunderbird.profile.Path}"/>
+		<condition property="extension.targets.thunderbird.valid" value="true">
+			<available file="${thunderbird.profiledir}/extensions/${extension.id}" type="dir"/>
+		</condition>
+		<echo>Profile directory is ${thunderbird.profiledir}</echo>
+	</target>
+	
+	<target name="_setup-firefox" if="extension.targets.firefox">
+		
+		<!-- Sets up some properties if firefox is one of the targets of the extension -->
+		
+		<echo>Firefox extension</echo>
+		<property prefix="firefox.profile" file="${firefox.datadir}/profiles.ini"/>
+		<property name="firefox.profiledir" location="${firefox.datadir}/${firefox.profile.Path}"/>
+		<condition property="extension.targets.firefox.valid" value="true">
+			<available file="${firefox.profiledir}/extensions/${extension.id}" type="dir"/>
+		</condition>
+		<echo>Profile directory is ${firefox.profiledir}</echo>
+	</target>
+	
+	<target name="_setup-mozilla" if="extension.targets.mozilla">
+		
+		<!-- Sets up some properties if mozilla is one of the targets of the extension -->
+		
+		<echo>Mozilla extension</echo>
+		<property prefix="mozilla.profile" file="${mozilla.datadir}/profiles.ini"/>
+		<property name="mozilla.profiledir" location="${mozilla.datadir}/${mozilla.profile.Path}"/>
+		<condition property="extension.targets.mozilla.valid" value="true">
+			<available file="${mozilla.profiledir}/extensions/${extension.id}" type="dir"/>
+		</condition>
+		<echo>Profile directory is ${firefox.profiledir}</echo>
+	</target>
+	
+	<target name="_overwrite_firefox" if="extension.targets.firefox.valid">
+
+		<!-- Copies the extension files to the firefox profile -->
+		
+		<echo>Overwriting installation in Firefox</echo>
+		<copy todir="${firefox.profiledir}/extensions/${extension.id}">
+			<fileset dir="${bindir}" includes="**/*"/>
+		</copy>
+	</target>
+	
+	<target name="_overwrite_thunderbird" if="extension.targets.thunderbird.valid">
+
+		<!-- Copies the extension files to the thunderbird profile -->
+		
+		<echo>Overwriting installation in Thunderbird</echo>
+		<copy todir="${thunderbird.profiledir}/extensions/${extension.id}">
+			<fileset dir="${bindir}" includes="**/*"/>
+		</copy>
+	</target>
+	
+	<target name="_overwrite_mozilla" if="extension.targets.mozilla.valid">
+
+		<!-- Copies the extension files to the mozilla profile -->
+		
+		<echo>Overwriting installation in Mozilla</echo>
+		<copy todir="${mozilla.profiledir}/extensions/${extension.id}">
+			<fileset dir="${bindir}" includes="**/*"/>
+		</copy>
+	</target>
+	
+	<target name="_buildcomponents" if="components-exists">
+		
+		<!-- Builds the components. Any js files are copied to the build dir and any idl files are compiled -->
+		
+		<mkdir dir="${bindir}/components"/>
+		<copy todir="${bindir}/components">
+			<fileset dir="${srcdir}/components" includes="*.js"/>
+		</copy>
+		<apply executable="${localsetup.tools.xpidl}" dir="${bindir}/components" dest="${bindir}/components">
+			<arg value="-m"/>
+			<arg value="typelib"/>
+			<arg value="-I"/>
+			<arg value="${localsetup.tools.xpidl.include}"/>
+			<arg value="-w"/>
+			<fileset dir="${srcdir}/components" includes="*.idl"/>
+			<mapper type="glob" from="*.idl" to="*.xpt"/>
+		</apply>
+	</target>
+	
+	<target name="_buildchrome" if="extension.chrome.jarname">
+		
+		<!-- Jars up the chrome folders into the build dir -->
+		
+		<mkdir dir="${bindir}/chrome"/>
+		<delete file="${bindir}/chrome/${extension.chrome.jarname}"/>
+		<jar basedir="${srcdir}/chrome" compress="false" includes="${extension.chrome.files}" destfile="${bindir}/chrome/${extension.chrome.jarname}">
+		</jar>
+	</target>
+
+</project>

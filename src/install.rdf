@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+
+<RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+		xmlns:em="http://www.mozilla.org/2004/em-rdf#">
+
+	<Description about="urn:mozilla:install-manifest">
+
+		<em:id>{68D79F97-61E7-4bae-962C-B4224E470D30}</em:id>
+		<em:version>0.0.1</em:version>
+    
+		<em:targetApplication>
+			<Description>
+				<em:id>{3550f703-e582-4d05-9a08-453d09bdfdc6}</em:id>
+				<em:minVersion>0.7</em:minVersion>
+				<em:maxVersion>0.8</em:maxVersion>
+			</Description>
+		</em:targetApplication>
+    
+		<em:name>View Manager</em:name>
+		<em:description>Allows each folder to have its own unique display or follow a preset.</em:description>
+		<em:creator>Dave Townsend</em:creator>
+
+		<em:file>
+			<Description about="urn:mozilla:extension:file:ViewManager.jar">
+				<em:package>content/</em:package>
+			</Description>
+		</em:file>
+		
+	</Description>      
+
+</RDF>

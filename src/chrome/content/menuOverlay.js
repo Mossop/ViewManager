@@ -329,6 +329,7 @@ var folderViewManager =
 	// Occurs when someone selects the copy menu
 	copyView: function(menu)
 	{
+		dump("Copying...");
 		var newname = prompt("Enter a name for the new view:","");
 		if (newname!=null)
 		{

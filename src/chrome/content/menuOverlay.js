@@ -16,6 +16,7 @@ var folderViewManager =
 	customArc: null,
 	previewArc: null,
 	layoutArc: null,
+	quickSearchArc: null,
 	
 	trueLiteral: null,
 	falseLiteral: null,
@@ -30,6 +31,7 @@ var folderViewManager =
 		this.customArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#custom");
 		this.previewArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#preview");
 		this.layoutArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#layout");
+		this.quickSearchArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#qs");
 
 		this.trueLiteral=this.rdfservice.GetLiteral("true");
 		this.falseLiteral=this.rdfservice.GetLiteral("false");
@@ -67,10 +69,19 @@ var folderViewManager =
 
 		this.folderTree = document.getElementById("folderTree");
 		this.folderTree.addEventListener("select",this.folderSelectedListener,false);
+
 		var paneToggleKey = document.getElementById("key_toggleMessagePane");
 		paneToggleKey.addEventListener("command",this.previewPaneToggledListener,false);
+
 		var paneToggleMenu = document.getElementById("menu_showMessage");
 		paneToggleMenu.addEventListener("command",this.previewPaneToggledListener,false);
+
+		var quickSearchPopup = document.getElementById("viewPicker");
+		quickSearchPopup.addEventListener("command",this.quickSearchListener,false);
+
+		var threadTree = document.getElementById("threadTree");
+		threadTree.addEventListener("command",this.threadTreeListener,false);
+
 		this.preferences.QueryInterface(Components.interfaces.nsIPrefBranchInternal).addObserver("mail.pane_config.dynamic",this.layoutChangeObserver,false);
 	},
 	
@@ -144,15 +155,40 @@ var folderViewManager =
 		this.flushData();
 	},
 	
+	saveQuickSearchState: function(view)
+	{
+		var quickSearchPopup = document.getElementById("viewPicker");
+		var value = this.rdfservice.GetLiteral(quickSearchPopup.value);
+		this.replaceAssertion(view,this.quickSearchArc,value);
+	},
+	
+	saveThreadTreeState: function(view)
+	{
+		var threadTree = document.getElementById("threadTree");
+		var cols = threadTree.getElementsByTagName("treecol");
+		for (var ct=0; ct<cols.length; ct++)
+		{
+			var col = cols.item(ct);
+			var sizeres = this.rdfservice.GetResource("threadTree://widths#"+col.id);
+			var visres = this.rdfservice.GetResource("threadTree://visibility#"+col.id);
+			var ordres = this.rdfservice.GetResource("threadTree://ordinal#"+col.id);
+			this.replaceAssertion(view,sizeres,this.rdfservice.GetIntLiteral(col.width));
+			this.replaceAssertion(view,ordres,this.rdfservice.GetIntLiteral(col.ordinal));
+			if (col.hidden)
+			{
+				this.replaceAssertion(view,visres,this.falseLiteral);
+			}
+			else
+			{
+				this.replaceAssertion(view,visres,this.trueLiteral);
+			}
+		}
+	},
+	
 	saveLayoutState: function(view)
 	{
-		var target = this.dataSource.GetTarget(view,this.layoutArc,true);
-		if (target!=null)
-		{
-			this.dataSource.Unassert(view,this.layoutArc,target);
-		}
 		var value = this.rdfservice.GetIntLiteral(this.preferences.getIntPref("mail.pane_config.dynamic"));
-		this.dataSource.Assert(view,this.layoutArc,value,true);
+		this.replaceAssertion(view,this.layoutArc,value);
 	},
 	
 	savePreviewPaneState: function(view)
@@ -160,13 +196,11 @@ var folderViewManager =
 		// Save preview pane state
 		if (IsMessagePaneCollapsed())
 		{
-			this.dataSource.Unassert(view,this.previewArc,this.trueLiteral);
-			this.dataSource.Assert(view,this.previewArc,this.falseLiteral,true);
+			this.replaceAssertion(view,this.previewArc,this.falseLiteral);
 		}
 		else
 		{
-			this.dataSource.Unassert(view,this.previewArc,this.falseLiteral);
-			this.dataSource.Assert(view,this.previewArc,this.trueLiteral,true);
+			this.replaceAssertion(view,this.previewArc,this.trueLiteral);
 		}
 	},
 	
@@ -175,6 +209,8 @@ var folderViewManager =
 	{
 		this.savePreviewPaneState(view);
 		this.saveLayoutState(view);
+		this.saveQuickSearchState(view);
+		this.saveThreadTreeState(view);
 		this.flushData();
 	},
 	
@@ -208,6 +244,41 @@ var folderViewManager =
 		{
 			this.preferences.setIntPref("mail.pane_config.dynamic",value.QueryInterface(Components.interfaces.nsIRDFInt).Value);
 		}
+		
+		// Load the quick search state
+		value = this.dataSource.GetTarget(view,this.quickSearchArc,true);
+		var quickSearchPopup = document.getElementById("viewPicker");
+		if (value==null)
+		{
+			quickSearchPopup.value="0";
+		}
+		else
+		{
+			quickSearchPopup.value=value.QueryInterface(Components.interfaces.nsIRDFLiteral).Value;
+		}
+		viewChange(quickSearchPopup);
+		
+		// Load the threadTree state
+		/*var threadTree = document.getElementById("threadTree");
+		var cols = threadTree.getElementsByTagName("treecol");
+		for (var ct=0; ct<cols.length; ct++)
+		{
+			var col = cols.item(ct);
+			var sizeres = this.rdfservice.GetResource("threadTree://widths#"+col.id);
+			var visres = this.rdfservice.GetResource("threadTree://visibility#"+col.id);
+			var ordres = this.rdfservice.GetResource("threadTree://ordinal#"+col.id);
+			col.width=this.dataSource.GetTarget(view,sizeres,true).QueryInterface(Components.interfaces.nsIRDFInt).Value;
+			col.ordinal=this.dataSource.GetTarget(view,ordres,true).QueryInterface(Components.interfaces.nsIRDFInt).Value;
+			var hidden = this.dataSource.GetTarget(view,visres,true);
+			if (hidden==this.trueLiteral)
+			{
+				col.hidden=true;
+			}
+			else
+			{
+				col.hidden=false;
+			}
+		}*/
 	},
 	
 	// Flushes any state data to disk
@@ -215,6 +286,20 @@ var folderViewManager =
 	{
 		var rds = this.dataSource.QueryInterface(Components.interfaces.nsIRDFRemoteDataSource);
 		rds.Flush();
+	},
+	
+	// Makes an assertion, removing an old one if necessary
+	replaceAssertion: function(source,property,target)
+	{
+		var oldtarget = this.dataSource.GetTarget(source,property,true);
+		if (oldtarget==null)
+		{
+			this.dataSource.Assert(source,property,target,true);
+		}
+		else
+		{
+			this.dataSource.Change(source,property,oldtarget,target);
+		}
 	},
 	
 	// Finds and checks the appropriate menu item
@@ -253,14 +338,13 @@ var folderViewManager =
 			}
 			else
 			{
-				this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView);
 				var newview = this.copyCurrentView(newname,false);
 				if (this.isCustomView(this.currentView))
 				{
 					this.deleteView(this.currentView);
 				}
 				this.currentView=newview;
-				this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
+				this.replaceAssertion(this.currentFolder,this.viewArc,this.currentView);
 				this.flushData();
 				this.checkMenu(this.currentView);
 			}
@@ -272,13 +356,12 @@ var folderViewManager =
 	{
 		if (menu.resource!=this.currentView)
 		{
-			this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView,true);
 			if (this.isCustomView(this.currentView))
 			{
 				this.deleteView(this.currentView);
 			}
 			this.currentView=menu.resource;
-			this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
+			this.replaceAssertion(this.currentFolder,this.viewArc,this.currentView);
 			this.flushData();
 			
 			this.loadView(this.currentView);
@@ -290,9 +373,8 @@ var folderViewManager =
 	{
 		if (!this.isCustomView(this.currentView))
 		{
-			this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView);
 			this.currentView=this.copyCurrentView("custom",true);
-			this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
+			this.replaceAssertion(this.currentFolder,this.viewArc,this.currentView);
 			this.flushData();
 		}
 	},
@@ -350,6 +432,24 @@ var folderViewManager =
 		observe: function(subject, topic, data)
 		{
 			folderViewManager.saveLayoutState(folderViewManager.currentView);
+			folderViewManager.flushData();
+		}
+	},
+	
+	threadTreeListener:
+	{
+		handleEvent: function(event)
+		{
+			folderViewManager.saveThreadTreeState(folderViewManager.currentView);
+			folderViewManager.flushData();
+		}
+	},
+	
+	quickSearchListener:
+	{
+		handleEvent: function(event)
+		{
+			folderViewManager.saveQuickSearchState(folderViewManager.currentView);
 			folderViewManager.flushData();
 		}
 	},

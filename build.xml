@@ -1,4 +1,4 @@
-<project name="TestExtension" default="package">
+<project name="ViewManager" default="package">
 	
 	<description>
 		A build file that should automate the packaging of mozilla based extensions.

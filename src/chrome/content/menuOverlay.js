@@ -20,12 +20,27 @@ var folderViewManager =
 		this.customArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#custom");
 
 		var dirService = Components.classes["@mozilla.org/file/directory_service;1"].getService(Components.interfaces.nsIProperties);
-		var profile = dirService.get("ProfD",Components.interfaces.nsIFile);
+		var filename = dirService.get("ProfD",Components.interfaces.nsIFile)
+				.QueryInterface(Components.interfaces.nsIFile);
+		filename.append("viewmanager.rdf");
+		if (!filename.exists())
+		{
+			filename.create(Components.interfaces.nsIFile.NORMAL_FILE_TYPE,660);
+		}
+		
 		var ioService = Components.classes["@mozilla.org/network/io-service;1"].getService(Components.interfaces.nsIIOService);
-		this.stateFile = "file://" + ioService.newFileURI(profile).path + "/viewmanager.rdf";
+		this.stateFile = ioService.newFileURI(filename).asciiSpec;
 		//dump(stateFile);
 		this.dataSource = this.rdfservice.GetDataSource(this.stateFile);
 
+		var viewroot = this.rdfservice.GetResource("views://");
+		var cutils = Components.classes["@mozilla.org/rdf/container-utils;1"].getService(Components.interfaces.nsIRDFContainerUtils);
+		if (!cutils.IsSeq(this.dataSource,viewroot))
+		{
+			cutils.MakeSeq(this.dataSource,viewroot);
+			this.flushData();
+		}
+		
 		this.viewMenu = document.getElementById("viewmanager_Views");
 		this.viewMenu.database.AddDataSource(this.dataSource);
 		this.viewMenu.builder.rebuild();
@@ -41,29 +56,30 @@ var folderViewManager =
 	// Stores the current vuew as a new view in the statefile.
 	// name is the name for the view. custom says whether it is a custom view or not.
 	// returns the view resource.
-	copyCurrentView(name,custom)
+	copyCurrentView: function(name,custom)
 	{
 		var ct = 1;
-		var newres = this.rdfService.getResource("views://view"+ct);
+		var newres = this.rdfservice.GetResource("views://view"+ct);
 		var testname = this.dataSource.GetTarget(newres,this.nameArc,true);
-		while (testname==null)
+		while (testname!=null)
 		{
 			ct++;
-			newres = this.rdfService.getResource("views://view"+ct);
+			newres = this.rdfservice.GetResource("views://view"+ct);
 			testname = this.dataSource.GetTarget(newres,this.nameArc,true);
 		}
-		this.dataSource.Assert(newres,this.nameArc,this.rdfService.GetLiteral(name),true);
+		this.dataSource.Assert(newres,this.nameArc,this.rdfservice.GetLiteral(name),true);
 		if (!custom)
 		{
-			this.dataSource.Assert(newres,this.customArc,this.rdfService.GetLiteral("false"),true);
+			this.dataSource.Assert(newres,this.customArc,this.rdfservice.GetLiteral("false"),true);
 			var container = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
 			container.Init(this.dataSource,this.rdfResource.GetResource("views://"));
 		}
 		else
 		{
-			this.dataSource.Assert(newres,this.customArc,this.rdfService.GetLiteral("true"),true);
+			this.dataSource.Assert(newres,this.customArc,this.rdfservice.GetLiteral("true"),true);
 		}
 		this.flushData();
+		this.saveCurrentView(newres);
 		return newres;
 	},
 	
@@ -76,7 +92,36 @@ var folderViewManager =
 		return (result.QueryInterface(Components.interfaces.nsIRDFLiteral).Value=="true");
 	},
 	
-	loadView: function()
+	// Loads the given view from the state file.
+	loadView: function(view)
+	{
+	},
+	
+	// Deletes the current view from the state file.
+	deleteView: function(view)
+	{
+		if (this.isCustomView(view))
+		{
+		}
+		
+		// Simple and thorough, wipe out all assertions about this view.
+		
+		var arcs = this.dataSource.ArcLabelsOut(view);
+		while (arcs.hasMoreElements())
+		{
+			var arc = arcs.getNext().QueryInterface(Components.interfaces.nsIRDFResource);
+			var targets = this.dataSource.GetTargets(view,arc,true);
+			while (targets.hasMoreElements())
+			{
+				var target = targets.getNext().QueryInterface(Components.interfaces.nsIRDFNode);
+				this.dataSource.Unassert(view,arc,target);
+			}
+		}
+		this.flushData();
+	},
+	
+	// Saves the current view settings to the given view resource.
+	saveCurrentView: function(view)
 	{
 	},
 	
@@ -95,13 +140,13 @@ var folderViewManager =
 			this.dataSource.Unassert(this.currentFolder,this.viewArc,this.currentView,true);
 			if (isCustomView(this.currentView))
 			{
-				// need to delete the custom view
+				deleteView(this.currentView);
 			}
 			this.currentView=view.resource;
 			this.dataSource.Assert(this.currentFolder,this.viewArc,this.currentView,true);
 			this.flushData();
 			
-			this.loadView();
+			this.loadView(this.currentView);
 
 			view.setAttribute("checked","true");
 		}
@@ -154,7 +199,7 @@ var folderViewManager =
 			{
 				// change view
 				this.currentView=newview;
-				this.loadView();
+				this.loadView(this.currentView);
 			}
 		}
 	},

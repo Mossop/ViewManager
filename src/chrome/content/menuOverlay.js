@@ -6,11 +6,16 @@ var folderViewManager =
 	viewMenu: null,
 	
 	rdfservice: Components.classes["@mozilla.org/rdf/rdf-service;1"].getService(Components.interfaces.nsIRDFService),
+	dataSource: null,
+	stateFile: null,
+	
 	viewArc: null,
 	nameArc: null,
 	customArc: null,
-	dataSource: null,
-	stateFile: null,
+	previewArc: null,
+	
+	trueLiteral: null,
+	falseLiteral: null,
 	
 	// Initialises the objects. Called onload of the document.
 	init: function()
@@ -18,7 +23,11 @@ var folderViewManager =
 		this.viewArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#view");
 		this.nameArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#name");
 		this.customArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#custom");
+		this.previewArc=this.rdfservice.GetResource("http://www.blueprintit.co.uk/~dave/thunderbird/viewmanager#preview");
 
+		this.trueLiteral=this.rdfservice.GetLiteral("true");
+		this.falseLiteral=this.rdfservice.GetLiteral("false");
+		
 		var dirService = Components.classes["@mozilla.org/file/directory_service;1"].getService(Components.interfaces.nsIProperties);
 		var filename = dirService.get("ProfD",Components.interfaces.nsIFile)
 				.QueryInterface(Components.interfaces.nsIFile);
@@ -70,13 +79,14 @@ var folderViewManager =
 		this.dataSource.Assert(newres,this.nameArc,this.rdfservice.GetLiteral(name),true);
 		if (!custom)
 		{
-			this.dataSource.Assert(newres,this.customArc,this.rdfservice.GetLiteral("false"),true);
+			this.dataSource.Assert(newres,this.customArc,this.falseLiteral,true);
 			var container = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
 			container.Init(this.dataSource,this.rdfResource.GetResource("views://"));
+			container.AppendElement(newres);
 		}
 		else
 		{
-			this.dataSource.Assert(newres,this.customArc,this.rdfservice.GetLiteral("true"),true);
+			this.dataSource.Assert(newres,this.customArc,this.trueLiteral,true);
 		}
 		this.flushData();
 		this.saveCurrentView(newres);
@@ -89,19 +99,40 @@ var folderViewManager =
 		var result = this.dataSource.GetTarget(view,this.customArc,true);
 		if (result==null)
 			return false;
-		return (result.QueryInterface(Components.interfaces.nsIRDFLiteral).Value=="true");
+		return (result==this.trueLiteral);
 	},
 	
 	// Loads the given view from the state file.
 	loadView: function(view)
 	{
+		// Load the preview pane state
+		var previewstate = this.dataSource.GetTarget(view,this.previewArc,true);
+		if (previewstate==null)
+			previewstate=this.trueLiteral;
+		if ((previewstate==null)||(previewstate==this.trueLiteral))
+		{
+			if (IsMessagePaneCollapsed())
+			{
+				MsgToggleMessagePane();
+			}
+		}
+		else
+		{
+			if (!IsMessagePaneCollapsed())
+			{
+				MsgToggleMessagePane();
+			}
+		}
 	},
 	
 	// Deletes the current view from the state file.
 	deleteView: function(view)
 	{
-		if (this.isCustomView(view))
+		if (!this.isCustomView(view))
 		{
+			var container = Components.classes["@mozilla.org/rdf/container;1"].createInstance(Components.interfaces.nsIRDFContainer);
+			container.Init(this.dataSource,this.rdfResource.GetResource("views://"));
+			container.RemoveElement(view,false);
 		}
 		
 		// Simple and thorough, wipe out all assertions about this view.
@@ -120,9 +151,26 @@ var folderViewManager =
 		this.flushData();
 	},
 	
+	savePreviewPaneState: function(view)
+	{
+		// Save preview pane state
+		if (IsMessagePaneCollapsed())
+		{
+			this.dataSource.Unassert(view,this.previewArc,this.trueLiteral);
+			this.dataSource.Assert(view,this.previewArc,this.falseLiteral,true);
+		}
+		else
+		{
+			this.dataSource.Unassert(view,this.previewArc,this.falseLiteral);
+			this.dataSource.Assert(view,this.previewArc,this.trueLiteral,true);
+		}
+	},
+	
 	// Saves the current view settings to the given view resource.
 	saveCurrentView: function(view)
 	{
+		this.savePreviewPaneState(view);
+		this.flushData();
 	},
 	
 	// Flushes any state data to disk
@@ -204,11 +252,6 @@ var folderViewManager =
 		}
 	},
 	
-	previewPaneToggled: function()
-	{
-		alert("pane toggled");
-	},
-	
 	startupListener:
 	{
 		handleEvent: function(event)
@@ -221,7 +264,8 @@ var folderViewManager =
 	{
 		handleEvent: function(event)
 		{
-			folderViewManager.previewPaneToggled();
+			folderViewManager.savePreviewPaneState(folderViewManager.currentView);
+			folderViewManager.flushData();
 		}
 	},
 	
